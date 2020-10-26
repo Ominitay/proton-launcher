@@ -1,0 +1,52 @@
+#!/bin/bash
+
+repo="ominitay/proton-launcher"
+branch="master"
+currentpath=`dirname $0`
+currentpath=`(cd $currentpath && pwd)`
+
+if [ -z $BASH_VERSION ]
+then
+  echo "ERROR: This script must be run with bash."
+  exit 1
+fi
+
+if [ "$0" = "$BASH_SOURCE" ]
+then
+  sourced=0
+else
+  sourced=1
+fi
+
+echo "========================================"
+echo "  #  Welcome to the proton-launcher  #  "
+echo "  #         installer stub!          #  "
+echo "========================================"
+echo -ne "  # Latest installer version: ...    #  "\\r
+installerversion=`curl -sL "https://raw.githubusercontent.com/${repo}/${branch}/updaterversion.txt"`
+echo "  # Latest installer version: $installerversion"
+echo "----------------------------------------"
+echo -ne "  #   Latest tool version: ...       #  "\\r
+toolversion=`curl -sL "https://raw.githubusercontent.com/${repo}/${branch}/version.txt"`
+echo "  #   Latest tool version: $toolversion"
+echo "========================================"
+echo -ne "  #   Downloading installer: ...     #  "\\r
+curl -sL "https://raw.githubusercontent.com/${repo}/${branch}/update" > update
+echo "  #   Downloading installer: Done!   #  "
+echo "----------------------------------------"
+echo -ne "  #    Chmodding installer: ...      #  "\\r
+chmod +x update
+echo "  #    Chmodding installer: Done!    #  "
+echo "----------------------------------------"
+if [ $sourced == 0 ]
+then
+  echo -ne "  #  Deleting stub installer: ...    #  "\\r
+  rm $currentpath/$0
+  echo "  #  Deleting stub installer: Done!  #  "
+  echo "----------------------------------------"
+fi
+echo "  #  Handing over to installer now!  #  "
+echo "========================================"
+
+exec ./update
+exit 1

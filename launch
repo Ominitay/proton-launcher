@@ -1,0 +1,117 @@
+#!/bin/bash
+
+version=0.1
+logfile=launch.log
+configfile=proton-launcher.conf
+currentpath=`dirname $0`
+currentpath=`(cd $currentpath && pwd)`
+loggingenabled=0
+
+function usage {
+  cat <<EOF
+Usage: ${0} [options]
+
+-h/? | Output this help page.
+-v   | Output the version.
+-l   | Run with proton logging enabled.
+-r   | Run with proton logging disabled (default).
+EOF
+}
+
+if [ -e "$currentpath/$logfile" ]
+then
+  rm $currentpath/$logfile
+fi
+
+function getconf {
+  if [ -e "$currentpath/$configfile" ]
+  then
+    source $currentpath/$configfile
+  else
+    echo "ERROR: $configfile does not exist."
+    exit 1
+  fi
+}
+
+function checkrequirements {
+  if [ ! -e "$currentpath/$gamefilename" ]
+  then
+    echo "ERROR: Could not find game executable!"
+    exit 1
+  fi
+
+  if [ ! -e "$protonpath" ]
+  then
+    echo "ERROR: Could not find Proton!"
+    exit 1
+  fi
+
+  if [ ! -d "$compatdatapath" ]
+  then
+    echo "INFO: Creating compat data directory."
+    mkdir $compatdatapath
+  fi
+}
+
+function launchgame {
+  checkrequirements
+  if [ $loggingenabled == 1 ]
+  then
+    echo "INFO: Proton logging is ENABLED."
+  else
+    echo "INFO: Proton logging is DISABLED. Run this script with the -l option to ENABLE Proton logging."
+  fi
+  echo "INFO: Launching Proton"
+  STEAM_COMPAT_DATA_PATH=$compatdatapath PROTON_LOG=$loggingenabled "$protonpath" run "$currentpath/$gamefilename"
+}
+
+GETHELP=0
+GETVERSION=0
+LAUNCHWITHLOGGING=0
+LAUNCHWITHOUTLOGGING=0
+
+while getopts "lrvh\?" opts
+do
+  case $opts in
+    h|\?) GETHELP=1;;
+    v)    GETVERSION=1;;
+    l)    LAUNCHWITHLOGGING=1;;
+    r)    LAUNCHWITHOUTLOGGING=1;;
+  esac
+done
+
+shift $(( "$OPTIND" -1 ))
+
+if [ $LAUNCHWITHLOGGING == 1 ] && [ $LAUNCHWITHOUTLOGGING == 1 ]
+then
+  echo "ERROR: You can't run the script with the -l and -r options at the same time!"
+  usage
+  exit 1
+fi
+
+if [ $GETHELP == 1 ]
+then
+  usage
+  exit 0
+fi
+
+if [ $GETVERSION == 1 ]
+then
+  echo "$version"
+  exit 0
+fi
+
+getconf
+
+if [ $LAUNCHWITHLOGGING == 1 ]
+then
+  loggingenabled=1
+fi
+
+if [ $LAUNCHWITHOUTLOGGING == 1 ]
+then
+  loggingenabled=0
+fi
+
+launchgame
+exit 0

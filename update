@@ -1,0 +1,291 @@
+#!/bin/bash
+
+configfile=proton-launcher.conf
+currentpath=`dirname $0`
+currentpath=`(cd $currentpath && pwd)`
+updaterversion=0.1
+updaterupstreamversion=0
+launcherversion=0
+launcherupstreamversion=0
+args=$@
+repo="Ominitay/proton-launcher"
+branch="master"
+
+function getconf {
+  if [ -e $currentpath/$configfile ]
+  then
+    source $currentpath/$configfile
+  else
+    echo "WARN: $configfile does not exist, ignoring."
+  fi
+}
+
+function usage {
+  cat <<EOF
+Usage: ${0} [options]
+
+-h/? | Output this help page.
+-c   | Check for updates.
+-f   | Force an update, even if version is not outdated.
+-r   | Settings from the outdated scripts won't be copied to the updated copy.
+-u   | Don't update updater.
+EOF
+}
+
+function compareversions {
+  [ "$1" = "`echo -e "$1\n$2" | sort -V | head -n1`" ]
+}
+
+function selfupdate {
+  echo "Generating external updater script..."
+  cat > $currentpath/extupdater << SCRIPT
+  #!/bin/bash
+
+  currentpath=`dirname $0`
+  currentpath=`(cd $currentpath && pwd)`
+
+  mv $currentpath/update $currentpath/update.old
+  echo "Downloading update..."
+  curl -sL "https://raw.githubusercontent.com/${repo}/${branch}/update" > $currentpath/update
+  chmod +x $currentpath/update
+  exec $currentpath/update -u $args
+  exit 0
+SCRIPT
+  chmod +x $currentpath/extupdater
+  exec $currentpath/extupdater
+  exit 1
+}
+
+function download {
+  echo "Downloading files..."
+  if [ -e $currentpath/launch ]
+  then
+    mv $currentpath/launch $currentpath/launch.old
+  fi
+  echo "Downloading launcher"
+  curl -sL "https://raw.githubusercontent.com/${repo}/${branch}/launch" > $currentpath/launch
+  chmod +x $currentpath/launch
+  echo "Done."
+
+  if [ -e $currentpath/$configfile ]
+  then
+    if [ $DONTSYNC == 0 ]
+    then
+      updatesettings
+    else
+      resetsettings
+    fi
+  else
+    resetsettings
+  fi
+  echo "Done."
+}
+
+function resetsettings {
+  if [ -e $currentpath/$configfile ]
+  then
+    rm $currentpath/$configfile
+  fi
+  echo "Downloading ${configfile}..."
+  curl -sL "https://raw.githubusercontent.com/${repo}/${branch}/$configfile" > $currentpath/$configfile
+}
+
+function updatesettings {
+  newconf=""
+  IFS=$'\n' varnames=(`sed -e 's/=.*//' -e 's/#.*$//' -e '/^$/d' $currentpath/$configfile`)
+  echo $varnames
+  IFS=$'\n' varvalues=(`sed -e 's/^[^=]*=//' -e 's/#.*$//' -e '/^$/d' $currentpath/$configfile`)
+  echo $varvalues
+
+  mv $currentpath/$configfile $currentpath/${configfile}.old
+
+  if [ -e $currentpath/${configfile}.new ]
+  then
+    rm $currentpath/${configfile}.new
+  fi
+  echo "Downloading ${configfile}..."
+  curl -sL "https://raw.githubusercontent.com/${repo}/${branch}/${configfile}" > $currentpath/${configfile}.new
+
+  echo "Updating settings..."
+  settingswrite varnames varvalues $currentpath/${configfile}.new
+
+  mv $currentpath/${configfile}.new $currentpath/$configfile
+}
+
+function settingswrite {
+  local -n names=$1
+  local -n vars=$2
+  linetowrite=""
+  for (( i = 0; i < ${#names[@]}; i++ ))
+  do
+    #cat $3 | grep -n ${names[$i]}=
+    repline=`cat $3 | grep -n ${names[$i]}= | sed -e 's/:.*//'`
+    linetowrite="${names[$i]}=${vars[$i]}"
+    if [ -z "$repline" ]
+    then
+      echo "Writing: $linetowrite"
+      echo "${linetowrite//\\/\\\\}}" >> $3
+    else
+      echo "Line to replace: $repline"
+      echo -n "Writing: $linetowrite"
+      sed -i "${repline}s|.*|${linetowrite//\\/\\\\}|" $3
+      echo
+    fi
+  done
+}
+
+if [ -e $currentpath/extupdater ]
+then
+  rm $currentpath/extupdater
+fi
+
+GETHELP=0
+FORCEUPDATE=0
+CHECKFORUPDATES=0
+DONTSYNC=0
+DONTUPDATEUPDATER=0
+
+while getopts "fcruh\?" opts
+do
+  case $opts in
+    h|\?) GETHELP=1;;
+    f)    FORCEUPDATE=1;;
+    c)    CHECKFORUPDATES=1;;
+    r)    DONTSYNC=1;;
+    u)    DONTUPDATEUPDATER=1;;
+  esac
+done
+
+shift $(( "$OPTIND"-1 ))
+
+if [ $GETHELP == 1 ]
+then
+  usage
+  exit 0
+fi
+
+getconf
+
+if [ $FORCEUPDATE == 1 ]
+then
+  echo "Getting updater version..."
+  updaterupstreamversion=`curl -sL "https://raw.githubusercontent.com/${repo}/${branch}/updaterversion.txt"`
+  echo "Done"
+  echo "Current updater version: $updaterversion"
+  echo "Upstream updater version: $updaterupstreamversion"
+
+  if [ $DONTUPDATEUPDATER == 0 ]
+  then
+    echo "Forcing update..."
+    selfupdate
+  else
+    echo "Not updating updater (-u option used)."
+  fi
+
+  if [ -e $currentpath/launch ]
+  then
+    echo "Getting version..."
+    launcherversion=`$currentpath/launch -v`
+    launcherupstreamversion=`curl -sL "https://raw.githubusercontent.com/${repo}/${branch}/version.txt"`
+    echo "Done"
+
+    echo "Current launcher version: $launcherversion"
+    echo "Upstream launcher version: $launcherupstreamversion"
+
+    echo "Forcing update..."
+    download
+    echo "Up to date!"
+  else
+    echo "Script not found. Downloading latest version..."
+    launcherupstreamversion=`curl -sL "https://raw.githubusercontent.com/${repo}/${branch}/version.txt"`
+    echo "Upstream launcher version: $launcherupstreamversion"
+    download
+  fi
+  exit 0
+fi
+
+if [ $CHECKFORUPDATES == 1 ]
+then
+  updateroutofdate=0
+  echo "Getting updater version..."
+  updaterupstreamversion=`curl -sL "https://raw.githubusercontent.com/${repo}/${branch}/updaterversion.txt"`
+  echo "Done"
+  echo "Current updater version: $updaterversion"
+  echo "Upstream updater version: $updaterupstreamversion"
+
+  if compareversions $updaterupstreamversion $updaterversion
+  then
+    echo "Updater up to date."
+  else
+    echo "Updater out of date."
+  fi
+
+  if [ -e $currentpath/launch ]
+  then
+    echo "Getting launcher version..."
+    launcherversion=`$currentpath/launch -v`
+    launcherupstreamversion=`curl -sL "https://raw.githubusercontent.com/${repo}/${branch}/version.txt"`
+    echo "Done"
+
+    echo "Current launcher version: $launcherversion"
+    echo "Upstream launcher version: $launcherupstreamversion"
+
+    if compareversions $launcherupstreamversion $launcherversion
+    then
+      echo "Up to date!"
+    else
+      echo "Out of date!"
+    fi
+  else
+    launcherupstreamversion=`curl -sL "https://raw.githubusercontent.com/${repo}/${branch}/version.txt"`
+    echo "Upstream launcher version: $launcherupstreamversion"
+    echo "Script not found. Make sure to download the script first, either by running this script with no options, or downloading directly from https://github.com/Ominitay/scp-labrat-scripts/"
+    exit 1
+  fi
+  exit 0
+fi
+
+updateroutofdate=0
+echo "Getting updater version..."
+updaterupstreamversion=`curl -sL "https://raw.githubusercontent.com/${repo}/${branch}/updaterversion.txt"`
+echo "Done"
+echo "Current updater version: $updaterversion"
+echo "Upstream updater version: $updaterupstreamversion"
+
+if compareversions $updaterupstreamversion $updaterversion
+then
+  echo "Updater up to date."
+else
+  echo "Updater out of date."
+  if [ $DONTUPDATEUPDATER == 0 ]
+  then
+    selfupdate
+  else
+    echo "Not updating updater."
+  fi
+fi
+
+if [ -e $currentpath/launch ]
+then
+  echo "Getting version..."
+  launcherversion=`$currentpath/launch -v`
+  launcherupstreamversion=`curl -sL "https://raw.githubusercontent.com/${repo}/${branch}/version.txt"`
+  echo "Done"
+
+  echo "Current launcher version: $launcherversion"
+  echo "Upstream launcher version: $launcherupstreamversion"
+
+  if compareversions $launcherupstreamversion $launcherversion
+  then
+    echo "Up to date!"
+  else
+    echo "Out of date!"
+    download
+  fi
+else
+  echo "Script not found. Downloading latest version..."
+  launcherupstreamversion=`curl -sL "https://raw.githubusercontent.com/${repo}/${branch}/version.txt"`
+  echo "Upstream launcher version: $launcherupstreamversion"
+  download
+fi
+exit 0
